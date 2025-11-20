@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DbMetaTool", "DbMetaTool.csproj", "{B5296484-EECB-4F3B-96B1-B89CC398A7CD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B5296484-EECB-4F3B-96B1-B89CC398A7CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B5296484-EECB-4F3B-96B1-B89CC398A7CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B5296484-EECB-4F3B-96B1-B89CC398A7CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B5296484-EECB-4F3B-96B1-B89CC398A7CD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7447B85C-9453-4EF6-92F3-8F670A5F323C}
+	EndGlobalSection
+EndGlobal
