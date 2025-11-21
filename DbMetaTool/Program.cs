@@ -1,8 +1,6 @@
 ﻿using DbMetaTool.Services.Export;
 using DbMetaTool.Services.Extraction;
 using FirebirdSql.Data.FirebirdClient;
-using FirebirdSql.Data.Isql;
-using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -10,8 +8,6 @@ namespace DbMetaTool
 {
     public static class Program
     {
-        private static string metadataFilesFormat = "sql";
-
         // Przykładowe wywołania:
         // DbMetaTool build-db --db-dir "C:\db\fb5" --scripts-dir "C:\scripts"
         // DbMetaTool export-scripts --connection-string "..." --output-dir "C:\out"
@@ -114,113 +110,62 @@ namespace DbMetaTool
 
                 string dbPath = Path.Combine(databaseDirectory, "database.fdb");
 
-
-                // podmieniamy ścieżkę w CREATE DATABASE
-                string createDbScript = Regex.Replace(headerScript,
-                    @"CREATE\s+DATABASE\s+'.+?'",
-                    $"CREATE DATABASE '{dbPath}'",
-                    RegexOptions.IgnoreCase);
-
                 string connectionString = $"DataSource=localhost;User={user};Password={password};Database={dbPath};ServerType=0;";
 
-                bool databaseCreated;
                 // utworzenie bazy
                 try
                 {
                     FbConnection.CreateDatabase($"{connectionString}Charset={charset};", pageSize: pageSize, overwrite: true);
                     report.AppendLine("OK: empty database created");
-                    databaseCreated = true;
                 }
                 catch (Exception ex)
                 {
                     report.AppendLine($"ERROR: database creation error\n  {ex.Message}");
-                    databaseCreated = false;
+                    Console.WriteLine(report.ToString());
+                    throw;
                 }
 
-                if (databaseCreated)
+                // 2) Wczytaj i wykonaj kolejno skrypty z katalogu scriptsDirectory
+                //    (tylko domeny, tabele, procedury).
+                var orderedFiles = Directory.GetFiles(scriptsDirectory, "*.sql").Where(file => !string.Equals(Path.GetFileNameWithoutExtension(file), "header", StringComparison.InvariantCultureIgnoreCase))
+                    .OrderBy(f =>
+                    {
+                        var name = Path.GetFileName(f).ToLowerInvariant();
+                        if (name.Contains("domains")) return 1;
+                        if (name.Contains("tables")) return 2;
+                        if (name.Contains("procedures")) return 3;
+                        if (name.Contains("triggers")) return 4;
+                        return 5;
+                    });
+                try
                 {
-                    // 2) Wczytaj i wykonaj kolejno skrypty z katalogu scriptsDirectory
-                    //    (tylko domeny, tabele, procedury).
                     using (var dbConn = new FbConnection(connectionString))
                     {
                         dbConn.Open();
 
-                        string domainsPath = Path.Combine(scriptsDirectory, "domains.sql");
-                        if (File.Exists(domainsPath))
-                        {
-                            string script = File.ReadAllText(domainsPath);
-                            ExecuteScript(dbConn, script, Path.GetFileName(domainsPath), report);
-                        }
 
-                        string tablesPath = Path.Combine(scriptsDirectory, "tables.sql");
-                        if (File.Exists(tablesPath))
+                        foreach (var file in orderedFiles)
                         {
-                            string script = File.ReadAllText(tablesPath);
-                            ExecuteScript(dbConn, script, Path.GetFileName(tablesPath), report);
-                        }
-
-                        string proceduresPath = Path.Combine(scriptsDirectory, "procedures.sql");
-                        if (File.Exists(proceduresPath))
-                        {
-                            string script = File.ReadAllText(proceduresPath);
-                            ExecuteScript(dbConn, script, Path.GetFileName(proceduresPath), report);
+                            string script = File.ReadAllText(file);
+                            ExecuteScript(dbConn, script, false, Path.GetFileName(file), report);
                         }
                     }
+                }
+                catch
+                {
+                    Console.WriteLine(report.ToString());
+                    throw;
                 }
             }
             else
             {
                 report.AppendLine($"ERROR: no header file at {headerPath}");
+                Console.WriteLine(report.ToString());
+                throw new Exception($"ERROR: no header file at {headerPath}");
             }
 
             // 3) Obsłuż błędy i wyświetl raport.
             Console.WriteLine(report.ToString());
-
-            static void ExecuteScript(FbConnection dbConn, string script, string fileName, StringBuilder report)
-            {
-                string errors = string.Empty;
-                // Normalizujemy końce linii
-                script = script.Replace("\r\n", "\n");
-
-                // Wykryj terminator z SET TERM
-                var termMatch = Regex.Match(script, @"SET\s+TERM\s+(\S+)\s+;", RegexOptions.IgnoreCase);
-                string terminator = ";";
-                if (termMatch.Success)
-                {
-                    terminator = termMatch.Groups[1].Value;
-                }
-
-                // Usuń wszystkie linie SET TERM
-                script = Regex.Replace(script, @"(?mi)^\s*SET\s+TERM\b.*$", string.Empty, RegexOptions.IgnoreCase);
-
-                // Podziel po aktualnym terminatorze
-                var statements = script.Split(new string[] { terminator }, StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var stmtRaw in statements)
-                {
-                    string stmt = stmtRaw.Trim();
-                    if (string.IsNullOrWhiteSpace(stmt)) continue;
-
-                    try
-                    {
-                        using var cmd = new FbCommand(stmt, dbConn);
-                        cmd.ExecuteNonQuery();
-                    }
-                    catch (Exception ex)
-                    {
-                        errors += $"\n - ERROR executing statement:\n{stmt}\n{ex.Message}\n";
-                    }
-                }
-
-                if (string.IsNullOrEmpty(errors))
-                {
-                    report.AppendLine($"OK: {fileName}");
-                }
-                else
-                {
-                    report.AppendLine($"ERROR: {fileName}{errors}");
-                }
-            }
         }
 
         /// <summary>
@@ -234,6 +179,7 @@ namespace DbMetaTool
                 conn.Open();
 
                 // 2) Pobierz metadane domen, tabel (z kolumnami) i procedur.
+                string metadataFilesFormat = "sql";
                 IExporter exporter;
                 try
                 {
@@ -246,16 +192,9 @@ namespace DbMetaTool
                     metadataFilesFormat = "sql";
                 }
 
-                // --- Nagłówek ---
                 var header = new HeaderExtractor(conn).Extract().FirstOrDefault();
-
-                // --- Domeny ---
                 var domains = new DomainExtractor(conn).Extract();
-
-                // --- Tabele ---
                 var tables = new TableExtractor(conn).Extract();
-
-                // --- Procedury ---
                 var procedures = new ProcedureExtractor(conn).Extract();
 
                 // 3) Wygeneruj pliki .sql / .json / .txt w outputDirectory.
@@ -285,11 +224,140 @@ namespace DbMetaTool
         /// </summary>
         public static void UpdateDatabase(string connectionString, string scriptsDirectory)
         {
-            // TODO:
+            var report = new StringBuilder("-- Update Database Report--\n");
+
+            // 3) Zadbaj o poprawną kolejność
+            var orderedFiles = Directory.GetFiles(scriptsDirectory, "*.sql").Where(file => !string.Equals(Path.GetFileNameWithoutExtension(file), "header", StringComparison.InvariantCultureIgnoreCase))
+                .OrderBy(f =>
+                {
+                    var name = Path.GetFileName(f).ToLowerInvariant();
+                    if (name.Contains("domains")) return 1;
+                    if (name.Contains("tables")) return 2;
+                    if (name.Contains("procedures")) return 3;
+                    if (name.Contains("triggers")) return 4;
+                    return 5;
+                });
+
             // 1) Połącz się z bazą danych przy użyciu connectionString.
-            // 2) Wykonaj skrypty z katalogu scriptsDirectory (tylko obsługiwane elementy).
-            // 3) Zadbaj o poprawną kolejność i bezpieczeństwo zmian.
-            throw new NotImplementedException();
+            using (var dbConn = new FbConnection(connectionString))
+            {
+                dbConn.Open();
+
+                // 2) Wykonaj skrypty z katalogu scriptsDirectory (tylko obsługiwane elementy).
+                foreach (var file in orderedFiles)
+                {
+                    string script = File.ReadAllText(file);
+
+                    // 3) Zadbaj o bezpieczeństwo zmian.
+                    try
+                    {
+                        ExecuteScript(dbConn, script, true, Path.GetFileName(file), report);
+                    }
+                    catch (Exception ex)
+                    {
+                        report.AppendLine($"ERROR: {Path.GetFileName(file)}");
+                        report.AppendLine(ex.Message);
+                    }
+                }
+            }
+            Console.WriteLine(report.ToString());
+        }
+
+        static void ExecuteScript(FbConnection dbConn, string script, bool forceUpdate, string fileName, StringBuilder report)
+        {
+            string warnings = string.Empty;
+            string errors = string.Empty;
+            // Normalizujemy końce linii
+            script = script.Replace("\r\n", "\n");
+
+            // Wykryj terminator z SET TERM
+            var termMatch = Regex.Match(script, @"SET\s+TERM\s+(\S+)\s+;", RegexOptions.IgnoreCase);
+            string terminator = ";";
+            if (termMatch.Success)
+            {
+                terminator = termMatch.Groups[1].Value;
+            }
+
+            // Usuń wszystkie linie SET TERM
+            script = Regex.Replace(script, @"(?mi)^\s*SET\s+TERM\b.*$", string.Empty, RegexOptions.IgnoreCase);
+
+            if (forceUpdate)
+            {
+                // Procedury → zamień na CREATE OR ALTER
+                script = Regex.Replace(script,
+                    @"(?mi)CREATE\s+PROCEDURE",
+                    "CREATE OR ALTER PROCEDURE");
+
+                // Triggery → zamień na CREATE OR ALTER
+                script = Regex.Replace(script,
+                    @"(?mi)CREATE\s+TRIGGER",
+                    "CREATE OR ALTER TRIGGER");
+            }
+
+            // Podziel po aktualnym terminatorze
+            var statements = script.Split(new string[] { terminator }, StringSplitOptions.RemoveEmptyEntries);
+
+            string warning = string.Empty;
+            foreach (var stmtRaw in statements)
+            {
+                string stmt = stmtRaw.Trim();
+                if (string.IsNullOrWhiteSpace(stmt)) continue;
+                try
+                {
+                    if (forceUpdate)
+                    {
+                        if (stmt.StartsWith("CREATE DOMAIN", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var name = stmt.Split(' ')[2];
+                            if (DomainExists(dbConn, name))
+                            {
+                                warnings += $"\n - WARNING: Domain {name} already exists";
+                                continue;
+                            }
+                        }
+                        else if (stmt.StartsWith("CREATE TABLE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var name = stmt.Split(' ')[2];
+                            if (TableExists(dbConn, name))
+                            {
+                                warnings += $"\n - WARNING: Table {name} already exists";
+                                continue;
+                            }
+                        }
+                    }
+
+                    using var cmd = new FbCommand(stmt, dbConn);
+                    cmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    errors += $"\n - ERROR executing statement:\n{stmt}\n{ex.Message}\n";
+                }
+            }
+
+            if (string.IsNullOrEmpty(errors))
+            {
+                report.AppendLine($"OK: {fileName}{warnings}");
+            }
+            else
+            {
+                report.AppendLine($"ERROR: {fileName}{warnings}{errors}");
+            }
+
+            static bool DomainExists(FbConnection conn, string domainName)
+            {
+                using var cmd = new FbCommand(
+                    "SELECT COUNT(*) FROM RDB$FIELDS WHERE RDB$FIELD_NAME = @name", conn);
+                cmd.Parameters.AddWithValue("name", domainName.ToUpperInvariant());
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+            }
+            static bool TableExists(FbConnection conn, string tableName)
+            {
+                using var cmd = new FbCommand(
+                    "SELECT COUNT(*) FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = @name", conn);
+                cmd.Parameters.AddWithValue("name", tableName.ToUpperInvariant());
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+            }
         }
     }
 }

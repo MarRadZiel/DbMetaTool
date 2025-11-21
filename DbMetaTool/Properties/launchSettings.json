@@ -11,6 +11,10 @@
     "DbMetaTool DBBuild": {
       "commandName": "Project",
       "commandLineArgs": "build-db --db-dir \"C:\\\\\" --scripts-dir \".\\\\metadataScripts\""
+    },
+    "DbMetaTool DBUpdate": {
+      "commandName": "Project",
+      "commandLineArgs": "update-db --connection-string \"Database=localhost:C:\\DATABASE.FDB;User=SYSDBA;Password=masterkey;Dialect=3;\" --scripts-dir \".\\\\metadataScripts\""
     }
   }
 }
