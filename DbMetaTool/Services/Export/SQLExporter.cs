@@ -50,8 +50,6 @@ namespace DbMetaTool.Services.Export
                 StringBuilder tableDef = new StringBuilder();
                 tableDef.AppendLine($"CREATE TABLE {table.Name} (");
 
-                // kolumny
-
                 var colDefs = new List<string>();
                 colDefs.AddRange(table.Columns.Select(col => $"    {col.Name} {col.DomainOrType}{(col.PrimaryKey ? " PRIMARY KEY" : string.Empty)}"));
                 colDefs.AddRange(table.Constraints.Select(cons => $"    CONSTRAINT {cons}"));
