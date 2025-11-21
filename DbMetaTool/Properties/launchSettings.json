@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "WSL": {
+      "commandName": "WSL2",
+      "distributionName": ""
+    },
+    "DbMetaTool Export": {
+      "commandName": "Project",
+      "commandLineArgs": "export-scripts --connection-string \"Database=localhost:C:\\TESTDB.FDB;User=SYSDBA;Password=masterkey;Dialect=3;\" --output-dir \".\\\\metadataScripts\""
+    },
+    "DbMetaTool DBBuild": {
+      "commandName": "Project",
+      "commandLineArgs": "build-db --db-dir \"C:\\\\\" --scripts-dir \".\\\\metadataScripts\""
+    }
+  }
+}
